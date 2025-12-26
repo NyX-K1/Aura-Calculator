@@ -32,7 +32,7 @@ const QUESTION_BANK = [
     { id: 25, text: "Are you the one who knocks?", yes: 95000, no: -45000, rationale: "Be the danger, not the victim." }
 ];
 
-let hasPlayedBgm = false;
+
 
 const AuraCalculator = () => {
     // State
@@ -48,27 +48,37 @@ const AuraCalculator = () => {
 
     const clickTimestamps = useRef([]);
 
+    const audioRef = useRef(null);
+
     // Logic: Select 3 Random Questions on Mount
     useEffect(() => {
         const shuffled = [...QUESTION_BANK].sort(() => 0.5 - Math.random());
         setCurrentQuestions(shuffled.slice(0, 3));
 
-        // Akatsuki BGM - Play only once per session
-        if (!hasPlayedBgm) {
-            const bgm = new Audio('/sounds/akatsuki-theme.mp3');
-            bgm.volume = 0.4;
-            bgm.loop = false;
-            bgm.play()
-                .then(() => {
-                    hasPlayedBgm = true;
-                })
-                .catch(e => console.log('BGM play failed:', e));
-
-            return () => {
-                bgm.pause();
-                bgm.currentTime = 0;
-            };
+        // AKATSUKI BGM - Play on EVERY mount
+        if (!audioRef.current) {
+            audioRef.current = new Audio('/sounds/akatsuki-theme.mp3');
+            audioRef.current.volume = 0.4;
+            audioRef.current.loop = false;
         }
+
+        // Force play logic
+        const playAudio = async () => {
+            try {
+                audioRef.current.currentTime = 0;
+                await audioRef.current.play();
+            } catch (e) {
+                console.log('BGM play failed:', e);
+            }
+        };
+        playAudio();
+
+        return () => {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.currentTime = 0;
+            }
+        };
     }, []);
 
     // Logic: Physics Conversion Display
@@ -166,7 +176,7 @@ const AuraCalculator = () => {
             transition: {
                 type: "spring",
                 bounce: 0.4,
-                duration: 1.2
+                duration: 5.5
             }
         }
     };
@@ -199,8 +209,8 @@ const AuraCalculator = () => {
             <motion.h1
                 initial={{ opacity: 0, scale: 1.5, filter: "blur(20px)" }}
                 whileInView={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-                transition={{ duration: 1.5, ease: "circOut" }}
-                viewport={{ once: false }}
+                transition={{ duration: 5.5, ease: "circOut" }}
+                viewport={{ once: true }}
                 className="text-7xl md:text-9xl font-black tracking-tighter text-white mix-blend-difference z-10"
             >
                 AURA<br /><span className="text-white/20">CALCULATOR</span>

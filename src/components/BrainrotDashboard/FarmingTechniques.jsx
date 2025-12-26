@@ -21,7 +21,10 @@ const FarmingTechniques = () => {
                     <motion.div
                         layoutId={`article-card-${article.id}`}
                         key={article.id}
-                        onClick={() => setSelectedArticle(article)}
+                        onClick={() => {
+                            new Audio('/sounds/metallic-click.mp3').play().catch(e => { });
+                            setSelectedArticle(article);
+                        }}
                         whileHover={{ y: -10 }}
                         className="bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden cursor-pointer group hover:border-white/30 transition-all relative"
                     >

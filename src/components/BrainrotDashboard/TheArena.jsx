@@ -17,7 +17,10 @@ const TheArena = () => {
                     <motion.div
                         key={game.id}
                         layoutId={`game-card-${game.id}`}
-                        onClick={() => setSelectedGame(game)}
+                        onClick={() => {
+                            new Audio('/sounds/metallic-click.mp3').play().catch(e => { });
+                            setSelectedGame(game);
+                        }}
                         className="group relative h-80 w-full overflow-hidden rounded-3xl border-2 border-white/10 hover:border-white transition-all cursor-pointer"
                     >
                         {/* Background Image */}

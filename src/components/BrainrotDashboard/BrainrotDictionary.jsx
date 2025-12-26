@@ -165,6 +165,9 @@ const BrainrotDictionary = () => {
                             exit={{ opacity: 0, scale: 0.9 }}
                             transition={{ duration: 0.2 }}
                             key={item.word}
+                            onMouseEnter={() => {
+                                new Audio('/sounds/metallic-click.mp3').play().catch(e => { });
+                            }}
                             className="bg-[#0a0a0a] p-6 rounded-2xl border border-white/5 hover:border-[#00ffff]/50 transition-colors group relative overflow-hidden"
                         >
                             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-100 transition-opacity">
