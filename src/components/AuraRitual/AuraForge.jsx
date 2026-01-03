@@ -1,11 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { motion } from 'framer-motion';
-
-if (typeof window !== 'undefined') {
-    gsap.registerPlugin(ScrollTrigger);
-}
+import { motion, AnimatePresence } from 'framer-motion';
 
 const CONSTANTS = {
     GEMINI_API_KEY: 'AIzaSyCoXr8jOuZ1KYqO7CtYdr8hK9x1gai-LkM',
@@ -37,12 +31,13 @@ const LOCAL_ORACLE = {
 const AuraForge = ({ onCalculate }) => {
     const containerRef = useRef(null);
     const titleRef = useRef(null);
-    const rippleContainerRef = useRef(null);
+    // rippleContainerRef removed as we render declaratively
 
     // --- STATE MANAGEMENT ---
     const [taps, setTaps] = useState([]);
     const [tapPhase, setTapPhase] = useState('idle');
     const [rhythmScore, setRhythmScore] = useState({ GOLD: 0, EMERALD: 0, INDIGO: 0 });
+    const [ripples, setRipples] = useState([]); // New Ripple State
 
     const [audioMapping, setAudioMapping] = useState([]);
     const [selectedSound, setSelectedSound] = useState(null);
@@ -61,9 +56,9 @@ const AuraForge = ({ onCalculate }) => {
     // --- SETUP ---
     useEffect(() => {
         const sounds = [
-            { file: '/doraemon-chime.mp3', pointsTo: 'GOLD' },
-            { file: '/bell-chime.wav', pointsTo: 'EMERALD' },
-            { file: '/wind-chime.wav', pointsTo: 'INDIGO' }
+            { file: '/sounds/doraemon-chime.mp3', pointsTo: 'GOLD' },
+            { file: '/sounds/bell-chime.wav', pointsTo: 'EMERALD' },
+            { file: '/sounds/wind-chime.wav', pointsTo: 'INDIGO' }
         ];
         // Perfect Shuffle
         for (let i = sounds.length - 1; i > 0; i--) {
@@ -92,14 +87,14 @@ const AuraForge = ({ onCalculate }) => {
 
     const handleTap = () => {
         if (tapPhase === 'complete') return;
-        const newTaps = [...taps, performance.now()];
+        const now = performance.now();
+        const newTaps = [...taps, now];
         setTaps(newTaps);
         setTapPhase('recording');
 
-        const ripple = document.createElement("div");
-        ripple.className = "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full rounded-full border border-white/60 pointer-events-none";
-        rippleContainerRef.current?.appendChild(ripple);
-        gsap.fromTo(ripple, { scale: 0.8, opacity: 0.8 }, { scale: 2, opacity: 0, duration: 1, ease: "power2.out", onComplete: () => ripple.remove() });
+        // Add Ripple
+        const id = now;
+        setRipples(prev => [...prev, { id }]);
 
         if (newTaps.length >= 5) {
             setTapPhase('complete');
@@ -108,6 +103,16 @@ const AuraForge = ({ onCalculate }) => {
     };
 
     // --- AUDIO CONTROL ---
+    useEffect(() => {
+        // Cleanup active audio on unmount
+        return () => {
+            if (currentAudioRef.current) {
+                currentAudioRef.current.pause();
+                currentAudioRef.current.currentTime = 0;
+            }
+        };
+    }, []);
+
     const stopAudio = () => {
         if (currentAudioRef.current) {
             currentAudioRef.current.pause();
@@ -235,14 +240,30 @@ const AuraForge = ({ onCalculate }) => {
                 transition={{ duration: 1.0, type: "spring", bounce: 0.3, delay: 0 }}
             >
                 {/* 1. RHYTHM */}
-                <div className="p-6 rounded-3xl border border-white/20 bg-white/5 backdrop-blur-md flex flex-col items-center justify-center min-h-[250px]">
-                    <label className="font-playfair text-xl text-white mb-2">1. The Rhythm</label>
-                    <div className="relative w-24 h-24 mb-4" ref={rippleContainerRef}>
+                <div className="p-6 rounded-3xl border border-white/20 bg-white/5 backdrop-blur-md flex flex-col items-center justify-center min-h-[250px] relative overflow-hidden">
+                    <label className="font-playfair text-xl text-white mb-2 relative z-10">1. The Rhythm</label>
+                    <div className="relative w-24 h-24 mb-4 z-10">
                         <button onClick={handleTap} disabled={tapPhase === 'complete'} className="w-full h-full rounded-full border border-white/20 flex items-center justify-center hover:bg-white/10 transition-all">
                             <div className={`w-3 h-3 rounded-full bg-[#FFD700] ${tapPhase === 'complete' ? 'shadow-[0_0_15px_#FFD700]' : ''}`}></div>
                         </button>
                     </div>
-                    <div className="flex gap-2">{[...Array(5)].map((_, i) => <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < taps.length ? 'bg-[#FFD700]' : 'bg-white/10'}`} />)}</div>
+
+                    {/* RIPPLES */}
+                    <AnimatePresence>
+                        {ripples.map((r) => (
+                            <motion.div
+                                key={r.id}
+                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/60 pointer-events-none"
+                                initial={{ width: '0%', height: '0%', opacity: 0.8 }}
+                                animate={{ width: '200%', height: '200%', opacity: 0 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 1, ease: "easeOut" }}
+                                onAnimationComplete={() => setRipples(prev => prev.filter(item => item.id !== r.id))}
+                            />
+                        ))}
+                    </AnimatePresence>
+
+                    <div className="flex gap-2 relative z-10">{[...Array(5)].map((_, i) => <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < taps.length ? 'bg-[#FFD700]' : 'bg-white/10'}`} />)}</div>
                 </div>
 
                 {/* 2. AUDIO */}

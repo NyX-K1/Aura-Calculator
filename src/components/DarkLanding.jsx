@@ -1,45 +1,33 @@
 import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, useScroll, useTransform } from 'framer-motion';
+import Lenis from 'lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import Lenis from 'lenis';
 import UnicornEmbed from './UnicornEmbed';
 import AuraForge from './AuraRitual/AuraForge';
 import OfferingSection from './AuraRitual/OfferingSection';
 import MindfulnessSection from './AuraRitual/MindfulnessSection';
 import SigilReveal from './AuraRitual/SigilReveal';
 
-if (typeof window !== 'undefined') {
-    gsap.registerPlugin(ScrollTrigger);
-}
-
 const DarkLanding = ({ onEnter, onResetSession, onNavigateToBrainrot }) => {
-    // Refs for Lenis Scroller
-    const wrapperRef = useRef(null);
-    const contentRef = useRef(null);
-    const heroTextRef = useRef(null);
-    const quoteRef = useRef(null);
-    const mistRef = useRef(null);
-
     // State
     const [mistIntensity, setMistIntensity] = useState(0.03); // 3% default
     const [sessionKey, setSessionKey] = useState(0); // For resetting AuraForge
     const [isCoolDown, setIsCoolDown] = useState(false); // OPTIMIZATION: Pause WebGL at bottom
-    const [scrollerReady, setScrollerReady] = useState(false); // Ensure child animations wait for Lenis
 
     // Updated State to hold full Reveal Data { category, title, fortune }
     const [revealData, setRevealData] = useState(null);
+
+    // Refs
+    const wrapperRef = useRef(null);
+    const audioRef = useRef(null);
 
     // Audio Refs
     const singingBowlRef = useRef(null);
     const gongRef = useRef(null);
 
     useEffect(() => {
-        // If we are in "Reveal Mode", we DO NOT want Lenis/GSAP running.
-        // The cleanup function from the previous render (when revealData was null) will run,
-        // destroying the old Lenis instance and reverting GSAP.
-        if (revealData) return;
-
         // Initialize Audio
         singingBowlRef.current = new Audio('/singing-bowl.mp3');
         gongRef.current = new Audio('/binaural-gong.mp3');
@@ -58,120 +46,74 @@ const DarkLanding = ({ onEnter, onResetSession, onNavigateToBrainrot }) => {
         };
         window.addEventListener('mouseover', handleMouseOver);
 
-        let lenis;
-        const updateLenis = (time) => {
-            lenis?.raf(time * 1000);
+        // --- LENIS SMOOTH SCROLL ---
+        const lenis = new Lenis({
+            wrapper: wrapperRef.current,
+            // duration: 1.2, // Default is usually fine, but can tweak
+            smoothWheel: true,
+            syncTouch: true, // For touch devices if needed
+        });
+
+        // Sync GSAP ScrollTrigger with Lenis
+        lenis.on('scroll', ScrollTrigger.update);
+
+        const update = (time) => {
+            lenis.raf(time * 1000);
         };
 
-        try {
-            if (wrapperRef.current && contentRef.current) {
-                lenis = new Lenis({
-                    wrapper: wrapperRef.current,
-                    content: contentRef.current,
-                    duration: 1.5,
-                    easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-                    smooth: true,
-                    mouseMultiplier: 1,
-                    smoothTouch: false,
-                });
+        gsap.ticker.add(update);
 
-                // Sync ScrollTrigger with Lenis
-                lenis.on('scroll', ScrollTrigger.update);
-
-                // Define Scroller Proxy
-                ScrollTrigger.scrollerProxy(wrapperRef.current, {
-                    scrollTop(value) {
-                        return arguments.length ? lenis.scrollTo(value, { immediate: true }) : lenis.scroll;
-                    },
-                    getBoundingClientRect() {
-                        return { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
-                    }
-                });
-
-                // Use GSAP Ticker for Lenis RAF
-                gsap.ticker.add(updateLenis);
-                gsap.ticker.lagSmoothing(0);
-
-                // Force Refresh to recognize proxy
-                ScrollTrigger.refresh();
-
-                // Signal children that Scroller Proxy is ready
-                setScrollerReady(true);
-            }
-        } catch (err) {
-            console.error("Lenis init error:", err);
-        }
-
-        const ctx = gsap.context(() => {
-            // 1. HERO TRANSITION (Morph feel)
-            if (heroTextRef.current) {
-                gsap.to(heroTextRef.current, {
-                    scale: 3,
-                    opacity: 0,
-                    rotationX: 45, // Tumble
-                    transformOrigin: "center center",
-                    filter: "blur(10px)",
-                    letterSpacing: "1em",
-                    y: -150,
-                    ease: "power1.in",
-                    scrollTrigger: {
-                        trigger: contentRef.current,
-                        scroller: wrapperRef.current,
-                        start: "top top",
-                        end: "25% top",
-                        scrub: 1.5 // THROTTLED
-                    }
-                });
-            }
-
-            // 2. QUOTE REVEAL
-            if (quoteRef.current) {
-                const words = quoteRef.current.querySelectorAll('.word');
-                gsap.fromTo(words,
-                    { opacity: 0, y: 20, filter: "blur(5px)" },
-                    {
-                        opacity: 1,
-                        y: 0,
-                        filter: "blur(0px)",
-                        stagger: 0.1,
-                        duration: 1.5,
-                        ease: "power3.out",
-                        scrollTrigger: {
-                            trigger: quoteRef.current,
-                            scroller: wrapperRef.current,
-                            start: "top 80%",
-                        }
-                    }
-                );
-            }
-        }, contentRef);
+        // Optional: Disable lag smoothing for instant feedback
+        gsap.ticker.lagSmoothing(0);
 
         return () => {
-            gsap.ticker.remove(updateLenis);
-            if (lenis) {
-                lenis.destroy();
-                lenis.off('scroll', ScrollTrigger.update);
-            }
-            ctx.revert();
             window.removeEventListener('mouseover', handleMouseOver);
+            lenis.destroy();
+            gsap.ticker.remove(update);
         };
-    }, [revealData]);
+    }, []);
 
     const splitQuote = (text) => {
         return text.split(' ').map((word, i) => (
-            <span key={i} className="word inline-block mr-2">{word}</span>
+            <motion.span
+                key={i}
+                className="word inline-block mr-2"
+                variants={{
+                    hidden: { opacity: 0, y: 20, filter: "blur(5px)" },
+                    visible: { opacity: 1, y: 0, filter: "blur(0px)" }
+                }}
+            >
+                {word}
+            </motion.span>
         ));
     };
 
     const handleMindfulnessVisibility = (isVisible) => {
         setIsCoolDown(isVisible);
     };
-
-    // Updated Handler to accept Data Object
     const handleCalculate = (data) => {
         if (gongRef.current) gongRef.current.play().catch(e => { });
-        setRevealData(data); // Expects { category, title, fortune }
+        setRevealData(data);
     };
+
+    // Scroll Progress for Hero Animation
+    const { scrollYProgress } = useScroll({
+        container: wrapperRef,
+        offset: ["start start", "end end"]
+    });
+
+    // Map scroll progress to hero text styles (Replicating the original scrub)
+    // GSAP was: start "top top", end "25% top". The page is long, so 0.25 might be too much if total height is huge.
+    // Let's approximate: As we scroll the first screen (0 to say 0.1 of total scroll), we animate out.
+    // Actually simpler: Calculate based on pixel scroll if possible, but scrollYProgress is easier.
+    // If the page is very long (400vh for Offering + others), 0.1 is roughly 40-50vh, which is good.
+
+    const heroScale = useTransform(scrollYProgress, [0, 0.1], [1, 3]);
+    const heroOpacity = useTransform(scrollYProgress, [0, 0.08], [1, 0]);
+    const heroRotateX = useTransform(scrollYProgress, [0, 0.1], [0, 45]);
+    const heroBlur = useTransform(scrollYProgress, [0, 0.1], ["0px", "10px"]);
+    const heroLetterSpacing = useTransform(scrollYProgress, [0, 0.1], ["0em", "1em"]);
+    const heroY = useTransform(scrollYProgress, [0, 0.1], [0, -150]);
 
     return (
         <div
@@ -183,15 +125,11 @@ const DarkLanding = ({ onEnter, onResetSession, onNavigateToBrainrot }) => {
             }}
         >
 
-            <div ref={contentRef} className="w-full relative">
+            <div className="w-full relative">
 
                 {/* BACKGROUND */}
                 <UnicornEmbed active={!isCoolDown} />
                 <div className={`fixed inset-0 bg-gradient-to-b from-slate-950 via-[#0a0a0a] to-[#1e1b4b] -z-10 transition-opacity duration-1000 ${isCoolDown ? 'opacity-100' : 'opacity-0'}`}></div>
-
-                {/* ATMOSPHERIC MIST */}
-                {/* ATMOSPHERIC MIST - REMOVED FOR PERFORMANCE */}
-                {/* <div ref={mistRef}... /> */}
 
                 {/* SYSTEM BADGE */}
                 <div className="fixed bottom-7 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
@@ -207,41 +145,62 @@ const DarkLanding = ({ onEnter, onResetSession, onNavigateToBrainrot }) => {
 
                 {/* HERO SECTION */}
                 <section className="relative h-screen flex flex-col items-center justify-center z-10">
-                    {/* ... Hero Content ... */}
-                    <div ref={heroTextRef} className="text-center px-4 will-change-transform">
-                        <h1 className="font-playfair text-6xl md:text-8xl font-bold tracking-tighter mb-8 bg-gradient-to-br from-[#FFD700] via-[#FDBA74] to-[#FFFFFF] bg-clip-text text-transparent leading-tight drop-shadow-[0_0_30px_rgba(255,215,0,0.2)] pb-2">
+                    <div className="text-center px-4 will-change-transform">
+                        <motion.h1
+                            style={{
+                                scale: heroScale,
+                                opacity: heroOpacity,
+                                rotateX: heroRotateX,
+                                filter: heroBlur,
+                                letterSpacing: heroLetterSpacing,
+                                y: heroY,
+                                transformOrigin: "center center"
+                            }}
+                            className="font-playfair text-6xl md:text-8xl font-bold tracking-tighter mb-8 bg-gradient-to-br from-[#FFD700] via-[#FDBA74] to-[#FFFFFF] bg-clip-text text-transparent leading-tight drop-shadow-[0_0_30px_rgba(255,215,0,0.2)] pb-2"
+                        >
                             "HARMONIZE<br />YOUR ESSENCE"
-                        </h1>
-                        <p className="font-montserrat text-xs tracking-[0.4em] text-orange-200/80 mb-12 uppercase font-semibold text-shadow-sm">
+                        </motion.h1>
+                        <motion.p
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 1, duration: 1 }}
+                            className="font-montserrat text-xs tracking-[0.4em] text-orange-200/80 mb-12 uppercase font-semibold text-shadow-sm"
+                        >
                             Find clarity in the chaos
-                        </p>
+                        </motion.p>
                         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4 opacity-0 animate-[fadeIn_1s_ease-out_2s_forwards]">
-                            <span className="font-montserrat text-[10px] tracking-[0.3em] text-white/40 uppercase">Scroll to Begin</span>
+                            <span className="font-montserrat text-[10px] tracking-widest text-white/40 uppercase">Scroll to Begin</span>
                             <div className="w-[1px] h-16 bg-gradient-to-b from-white/0 via-white/30 to-white/0 relative overflow-hidden">
                                 <div className="absolute top-0 left-0 w-full h-1/2 bg-white/60 animate-[drop_2s_cubic-bezier(0.77,0,0.175,1)_infinite]"></div>
                             </div>
                         </div>
                     </div>
-                </section>
+                </section >
 
                 {/* SECTION 1: THE FORGE */}
-                <AuraForge key={sessionKey} onCalculate={handleCalculate} />
+                < AuraForge key={sessionKey} onCalculate={handleCalculate} />
 
                 {/* SECTION 2: THE OFFERING */}
-                <OfferingSection isScrollerReady={scrollerReady} scrollContainerRef={wrapperRef} />
+                < OfferingSection scrollContainerRef={wrapperRef} />
 
                 {/* SECTION 3: MINDFULNESS VOID */}
-                <MindfulnessSection onEnter={handleMindfulnessVisibility} />
+                < MindfulnessSection onEnter={handleMindfulnessVisibility} />
 
                 {/* QUOTE SECTION */}
-                <section className="relative h-[50vh] flex flex-col items-center justify-center z-10 py-20 pointer-events-none">
-                    <blockquote ref={quoteRef} className="font-playfair text-3xl italic text-white/70 max-w-2xl text-center leading-relaxed drop-shadow-md">
+                < section className="relative h-[50vh] flex flex-col items-center justify-center z-10 py-20 pointer-events-none" >
+                    <motion.blockquote
+                        initial="hidden"
+                        whileInView="visible"
+                        viewport={{ margin: "-20%" }}
+                        transition={{ staggerChildren: 0.1 }}
+                        className="font-playfair text-3xl italic text-white/70 max-w-2xl text-center leading-relaxed drop-shadow-md"
+                    >
                         {splitQuote('"The universe is within you."')}
-                    </blockquote>
-                </section>
+                    </motion.blockquote>
+                </section >
 
                 {/* FOOTER */}
-                <footer className="w-full p-8 flex justify-center gap-8 border-t border-white/5 bg-black/40 backdrop-blur-md z-50 relative">
+                < footer className="w-full p-8 flex justify-center gap-8 border-t border-white/5 bg-black/40 backdrop-blur-md z-50 relative" >
                     <button
                         onClick={onNavigateToBrainrot}
                         className="font-montserrat text-[10px] font-bold text-white/60 hover:text-[#FFD700] transition-colors uppercase tracking-widest group relative"
@@ -263,39 +222,36 @@ const DarkLanding = ({ onEnter, onResetSession, onNavigateToBrainrot }) => {
                         Contact
                         <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-[#FFD700] transition-all duration-300 group-hover:w-full"></span>
                     </button>
-                </footer>
+                </footer >
 
                 {/* SIGIL REVEAL PORTAL (Overlay) */}
-                {revealData && createPortal(
-                    <SigilReveal
-                        category={revealData.category}
-                        title={revealData.title}
-                        fortune={revealData.fortune}
-                        onReset={() => {
-                            if (onResetSession) {
-                                // Trigger full parent remount if prop provided
-                                onResetSession();
-                            } else {
-                                // Fallback Logic
-                                setIsCoolDown(false);
-                                if (wrapperRef.current) {
-                                    wrapperRef.current.style.scrollBehavior = 'auto';
-                                    wrapperRef.current.scrollTop = 0;
+                {
+                    revealData && createPortal(
+                        <SigilReveal
+                            category={revealData.category}
+                            title={revealData.title}
+                            fortune={revealData.fortune}
+                            onReset={() => {
+                                if (onResetSession) {
+                                    // Trigger full parent remount if prop provided
+                                    onResetSession();
+                                } else {
+                                    // Fallback Logic
+                                    setIsCoolDown(false);
+                                    window.scrollTo(0, 0);
+                                    requestAnimationFrame(() => {
+                                        setRevealData(null);
+                                        setSessionKey(prev => prev + 1);
+                                    });
                                 }
-                                window.scrollTo(0, 0);
-                                requestAnimationFrame(() => {
-                                    setRevealData(null);
-                                    setSessionKey(prev => prev + 1);
-                                    if (wrapperRef.current) wrapperRef.current.style.scrollBehavior = '';
-                                });
-                            }
-                        }}
-                    />,
-                    document.body
-                )}
+                            }}
+                        />,
+                        document.body
+                    )
+                }
 
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };
 

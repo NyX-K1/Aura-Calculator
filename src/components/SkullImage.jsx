@@ -38,7 +38,7 @@ const SkullImage = ({
         <group ref={groupRef} position={position} rotation={variant === 'interactive' ? [0, 0, 0] : rotation}>
             <Image
                 ref={imageRef}
-                url="/skull.png"
+                url="/images/skull.png"
                 scale={scale}
                 transparent
                 toneMapped={false}

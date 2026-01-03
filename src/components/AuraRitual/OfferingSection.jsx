@@ -1,10 +1,5 @@
-import { useRef, useEffect } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-
-if (typeof window !== 'undefined') {
-    gsap.registerPlugin(ScrollTrigger);
-}
+import { useRef, useEffect, useState } from 'react';
+import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 
 const PHASES = [
     {
@@ -39,172 +34,142 @@ const PHASES = [
 
 const OfferingSection = ({ isScrollerReady, scrollContainerRef }) => {
     const containerRef = useRef(null);
-    const contentRef = useRef(null);
+    const audioRef = useRef(null);
+    const lastPlayedIndex = useRef(-1);
+
+    // Native scroll tracking within the parent "Lenis" wrapper context is tricky.
+    // However, since we are moving away from GSAP/Lenis, we assume standard scroll
+    // OR we hook into the ref passed down.
+
+    // For now, we use standard target ref for useScroll, but since DarkLanding might still use 
+    // a scroll wrapper, we need to be careful. 
+    // UPDATE: We are removing Lenis from DarkLanding too, so window scroll will work.
+
+    const { scrollYProgress } = useScroll({
+        target: containerRef,
+        container: scrollContainerRef,
+        offset: ["start start", "end end"]
+    });
+
+    const smoothProgress = useSpring(scrollYProgress, { stiffness: 100, damping: 20 });
 
     useEffect(() => {
-        // WAIT FOR PARENT WRAPPER & PROXY SETUP
-        if (!isScrollerReady || !scrollContainerRef?.current) return;
+        // Audio
+        audioRef.current = new Audio('/sounds/bell-chime.wav');
+        audioRef.current.volume = 0.2;
 
-        let ctx;
-        try {
-            const scrollerTarget = scrollContainerRef.current;
+        const unsubscribe = smoothProgress.on("change", (v) => {
+            // Calculate which section is active (0 to 3)
+            const count = PHASES.length;
+            const index = Math.floor(v * count);
 
-            // Audio Control
-            const bell = new Audio('/bell-chime.wav');
-            bell.volume = 0.2;
+            // Boundary checks
+            const safeIndex = Math.min(Math.max(index, 0), count - 1);
 
-            const playBell = () => {
-                bell.currentTime = 0;
-                bell.play().catch(() => { });
-            };
-
-            const stopBell = () => {
-                bell.pause();
-                bell.currentTime = 0;
-            };
-
-            ctx = gsap.context(() => {
-                const rawSections = gsap.utils.toArray('.obsidian-phase');
-                const sections = rawSections.filter(el => el !== null && el !== undefined);
-
-                if (sections.length === 0) return;
-
-                // INITIAL STATE
-                gsap.set(sections, { opacity: 0 });
-                gsap.set(sections[0], { opacity: 1 });
-
-                // MASTER TIMELINE
-                const tl = gsap.timeline({
-                    scrollTrigger: {
-                        trigger: containerRef.current,
-                        scroller: scrollerTarget,
-                        start: "top top",
-                        end: `+=${sections.length * 100}%`,
-                        pin: true,
-                        scrub: 1,
-                        onEnter: () => playBell(),       // Start on Enter
-                        onLeave: () => stopBell(),       // Stop on Leave
-                        onLeaveBack: () => stopBell(),   // Stop on Leave Back
-                        onEnterBack: () => playBell()    // Resume/Start on Return
-                    }
-                });
-
-                // CROSSFADE LOGIC
-                sections.forEach((section, i) => {
-                    if (i < sections.length - 1) {
-                        const nextSection = sections[i + 1];
-
-                        tl.to({}, { duration: 0.2 });
-
-                        tl.to(section, { opacity: 0, duration: 1, ease: "power1.inOut" }, "crossfade" + i)
-                            .to(nextSection, {
-                                opacity: 1,
-                                duration: 1,
-                                ease: "power1.inOut",
-                                onStart: playBell
-                            }, "crossfade" + i);
-                    }
-                });
-
-                tl.to({}, { duration: 0.5 });
-
-            }, containerRef);
-
-            // Force refresh one last time to ensure pins are calculated against ready scroller
-            ScrollTrigger.refresh();
-
-        } catch (e) {
-            console.error("Offering Animation Error:", e);
-        }
+            // Play sound on phase change, ONLY if within bounds
+            if (v > 0.01 && v < 0.99) {
+                if (safeIndex !== lastPlayedIndex.current) {
+                    audioRef.current.currentTime = 0;
+                    audioRef.current.play().catch(() => { });
+                    lastPlayedIndex.current = safeIndex;
+                }
+            } else {
+                // Stop sound if we are fully out of the section
+                if (audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current.currentTime = 0;
+                }
+                lastPlayedIndex.current = -1; // Reset so it plays again on re-entry
+            }
+        });
 
         return () => {
-            if (ctx) ctx.revert();
+            unsubscribe();
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.currentTime = 0;
+            }
         };
-    }, [isScrollerReady, scrollContainerRef]);
-
-    // DESIGN TOKENS
-
-    // 1. HOLY LIGHT TEXT (Whitish + Glow)
-    // To be visible on Dark BG, we need: 
-    // - Inner bright Gradient
-    // - Outer White Glow (Aura)
-    const holyTextClass = `
-        font-playfair text-4xl md:text-6xl font-bold leading-tight mb-8 max-w-3xl pb-2
-        text-transparent bg-clip-text bg-gradient-to-tr from-[#E2E8F0] via-[#FFFFFF] to-[#E2E8F0]
-        drop-shadow-[0_0_20px_rgba(255,255,255,0.4)]
-    `;
-
-    // 2. CHANGING BLUE GRADIENT (Subtext)
-    // Cyan-Blue-Neon animated gradient for dark mode compatibility
-    const animatedBlueGradient = `
-        font-montserrat text-sm md:text-base tracking-widest uppercase max-w-xl mx-auto
-        bg-[length:200%_auto] animate-[gradient_4s_ease_infinite]
-        bg-gradient-to-r from-[#22d3ee] via-[#818cf8] to-[#22d3ee]
-        text-transparent bg-clip-text
-        font-bold
-        drop-shadow-[0_0_10px_rgba(34,211,238,0.3)]
-    `;
+    }, [smoothProgress]);
 
     return (
-        <section ref={containerRef} className="h-screen w-full flex flex-col items-center justify-center relative z-50 overflow-hidden">
-            {/* INJECT ANIMATION STYLE */}
-            <style>{`
-                @keyframes gradient {
-                    0% { background-position: 0% 50%; }
-                    50% { background-position: 100% 50%; }
-                    100% { background-position: 0% 50%; }
-                }
-            `}</style>
+        <section ref={containerRef} className="h-[400vh] w-full relative z-50">
 
-            {/* BEAM (Holy Whitish) */}
-            {/* Using a "Shadow Beam" basically, creating a shaft of order in chaos */}
-            <div className="absolute top-0 left-1/2 w-1 h-full -translate-x-1/2 pointer-events-none">
-                <div className="w-full h-full bg-gradient-to-b from-transparent via-white/40 to-transparent shadow-[0_0_30px_rgba(255,255,255,0.3)]"></div>
-            </div>
+            <div className="sticky top-0 h-screen flex flex-col items-center justify-center overflow-hidden">
+                {/* BEAM */}
+                <div className="absolute top-0 left-1/2 w-1 h-full -translate-x-1/2 pointer-events-none">
+                    <div className="w-full h-full bg-gradient-to-b from-transparent via-white/40 to-transparent shadow-[0_0_30px_rgba(255,255,255,0.3)]"></div>
+                </div>
 
-            <div ref={contentRef} className="relative w-full max-w-4xl h-full flex items-center justify-center">
-                {PHASES.map((phase, index) => (
-                    <div
-                        key={phase.id}
-                        className="obsidian-phase absolute inset-0 flex flex-col items-center justify-center text-center px-4"
-                        style={{ zIndex: index + 10 }}
-                    >
-                        {/* HEADER */}
-                        <h2
-                            className="font-montserrat text-xs md:text-sm tracking-[0.5em] uppercase mb-8 drop-shadow-lg"
-                            style={{ color: phase.color === '#4B0082' ? '#A78BFA' : phase.color }} // Brighten Indigo
+                {PHASES.map((phase, i) => {
+                    // Create Opacity Transform for this specific slice
+                    // i=0 -> 0 to 0.25
+                    // i=1 -> 0.25 to 0.50
+                    const start = i / PHASES.length;
+                    const end = (i + 1) / PHASES.length;
+
+                    // Small overlap for crossfade
+                    const fadeStart = start;
+                    const fadeEnd = start + 0.05; // Fade in quickly
+                    const exitStart = end - 0.05;
+                    const exitEnd = end;
+
+                    // Compute opacity
+                    // We use useTransform to map scroll progress to opacity
+                    const opacity = useTransform(
+                        smoothProgress,
+                        // [gap, start, mid, end, exit]
+                        [start - 0.1, start, start + 0.1, end - 0.1, end],
+                        [0, 1, 1, 1, 0] // Fade Out at end
+                    );
+
+                    // Scale effect
+                    const scale = useTransform(smoothProgress, [start, end], [0.95, 1.05]);
+
+                    const holyTextClass = `
+                        font-playfair text-4xl md:text-6xl font-bold leading-tight mb-8 max-w-3xl pb-2
+                        text-transparent bg-clip-text bg-gradient-to-tr from-[#E2E8F0] via-[#FFFFFF] to-[#E2E8F0]
+                        drop-shadow-[0_0_20px_rgba(255,255,255,0.4)]
+                    `;
+
+                    const animatedBlueGradient = `
+                        font-montserrat text-sm md:text-base tracking-widest uppercase max-w-xl mx-auto
+                        bg-[length:200%_auto] animate-[gradient_4s_ease_infinite]
+                        bg-gradient-to-r from-[#22d3ee] via-[#818cf8] to-[#22d3ee]
+                        text-transparent bg-clip-text
+                        font-bold
+                        drop-shadow-[0_0_10px_rgba(34,211,238,0.3)]
+                    `;
+
+                    return (
+                        <motion.div
+                            key={phase.id}
+                            style={{ opacity, scale, display: i === 0 ? 'flex' : undefined }} // Ensure first is visible initially if needed, though opacity handles it
+                            className="absolute inset-0 flex flex-col items-center justify-center text-center px-4"
                         >
-                            {phase.header}
-                        </h2>
+                            <h2
+                                className="font-montserrat text-xs md:text-sm tracking-[0.5em] uppercase mb-8 drop-shadow-lg"
+                                style={{ color: phase.color === '#4B0082' ? '#A78BFA' : phase.color }}
+                            >
+                                {phase.header}
+                            </h2>
 
-                        {phase.isButton ? (
-                            <button className="group relative px-12 py-6 bg-white/5 border border-white/10 rounded-full overflow-hidden hover:bg-white/10 transition-all duration-500 hover:scale-105 hover:border-white/30 pointer-events-auto">
-                                <span className="relative z-10 font-playfair text-2xl md:text-3xl font-black tracking-widest text-white/90 group-hover:text-white transition-colors">
-                                    INITIATE
-                                </span>
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1s_infinite]"></div>
-                            </button>
-                        ) : (
-                            <>
-                                {/* MAIN QUOTE - HOLY LIGHT */}
-                                <h1 className={holyTextClass}>
-                                    {phase.quote}
-                                </h1>
+                            <h1 className={holyTextClass}>
+                                {phase.quote}
+                            </h1>
 
-                                {/* SEPARATOR */}
-                                <div className="w-16 h-0.5 bg-gradient-to-r from-transparent via-white/30 to-transparent mb-8 mx-auto"></div>
+                            <div className="w-16 h-0.5 bg-gradient-to-r from-transparent via-white/30 to-transparent mb-8 mx-auto"></div>
 
-                                {/* TASK - ANIMATED BLUE GRADIENT */}
-                                <p className={animatedBlueGradient}>
-                                    {phase.task}
-                                </p>
-                            </>
-                        )}
-                    </div>
-                ))}
-            </div>
-            <div className="absolute bottom-10 opacity-40 animate-pulse">
-                <p className="font-montserrat text-[10px] tracking-widest text-white/50 uppercase">Scroll to Ascend</p>
+                            <p className={animatedBlueGradient}>
+                                {phase.task}
+                            </p>
+                        </motion.div>
+                    );
+                })}
+
+                <div className="absolute bottom-10 opacity-40 animate-pulse">
+                    <p className="font-montserrat text-[10px] tracking-widest text-white/50 uppercase">Scroll to Ascend</p>
+                </div>
             </div>
         </section>
     );
